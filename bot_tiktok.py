@@ -30,27 +30,27 @@ TMP = Path(tempfile.gettempdir())
 TEMAS = [
     {"titulo": "O homem que viveu anos fingindo ser médico no Brasil",        "palavras": "hospital doctor crime"},
     {"titulo": "O serial killer que trabalhava como palhaço de festas infantis", "palavras": "clown dark mystery"},
-    {"titulo": "O país onde dormir no trabalho é sinal de dedicação",          "palavras": "japan office work"},
-    {"titulo": "O homem que sobreviveu a dois ataques nucleares",              "palavras": "explosion nuclear history"},
-    {"titulo": "A mulher que descobriu que era irmã do próprio marido",        "palavras": "family drama shock"},
-    {"titulo": "O avião que ficou 37 anos esquecido em um aeroporto",         "palavras": "airplane airport abandoned"},
+    {"titulo": "O país onde dormir no trabalho é sinal de dedicação",           "palavras": "japan office work"},
+    {"titulo": "O homem que sobreviveu a dois ataques nucleares",               "palavras": "explosion nuclear history"},
+    {"titulo": "A mulher que descobriu que era irmã do próprio marido",         "palavras": "family drama shock"},
+    {"titulo": "O avião que ficou 37 anos esquecido em um aeroporto",          "palavras": "airplane airport abandoned"},
     {"titulo": "O país onde é ilegal sorrir para a polícia",                   "palavras": "police law bizarre"},
-    {"titulo": "O homem que ganhou na loteria 7 vezes",                       "palavras": "money lottery winner"},
-    {"titulo": "A cidade submersa que reaparece quando a represa seca",       "palavras": "underwater city lake"},
-    {"titulo": "O crime perfeito que foi resolvido por uma selfie",           "palavras": "crime investigation phone"},
-    {"titulo": "O bebê que nasceu duas vezes",                                "palavras": "baby hospital miracle"},
-    {"titulo": "O homem que foi enterrado vivo e sobreviveu",                 "palavras": "cemetery survival dark"},
-    {"titulo": "A ilha que aparece e desaparece no mapa",                     "palavras": "island ocean mystery"},
+    {"titulo": "O homem que ganhou na loteria 7 vezes",                        "palavras": "money lottery winner"},
+    {"titulo": "A cidade submersa que reaparece quando a represa seca",        "palavras": "underwater city lake"},
+    {"titulo": "O crime perfeito que foi resolvido por uma selfie",            "palavras": "crime investigation phone"},
+    {"titulo": "O bebê que nasceu duas vezes",                                 "palavras": "baby hospital miracle"},
+    {"titulo": "O homem que foi enterrado vivo e sobreviveu",                  "palavras": "cemetery survival dark"},
+    {"titulo": "A ilha que aparece e desaparece no mapa",                      "palavras": "island ocean mystery"},
     {"titulo": "O prisioneiro que escapou da prisão três vezes pelo correio",  "palavras": "prison escape crime"},
 ]
 
 def checar_variaveis():
     ok = True
     for nome, val in [
-        ("TELEGRAM_TOKEN", TELEGRAM_TOKEN),
+        ("TELEGRAM_TOKEN",   TELEGRAM_TOKEN),
         ("TELEGRAM_CHAT_ID", TELEGRAM_CHAT_ID),
-        ("OPENAI_API_KEY", OPENAI_API_KEY),
-        ("PEXELS_KEY", PEXELS_KEY),
+        ("OPENAI_API_KEY",   OPENAI_API_KEY),
+        ("PEXELS_KEY",       PEXELS_KEY),
     ]:
         if val:
             log.info(f"  OK: {nome} = {val[:8]}...")
@@ -76,9 +76,9 @@ Retorne APENAS o texto da narração, sem indicações de cena."""
             json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": prompt}], "max_tokens": 600},
         )
         r.raise_for_status()
-        texto = r.json()["choices"][0]["message"]["content"].strip()
-        log.info(f"Roteiro gerado: {len(texto)} chars")
-        return texto
+    texto = r.json()["choices"][0]["message"]["content"].strip()
+    log.info(f"Roteiro gerado: {len(texto)} chars")
+    return texto
 
 async def gerar_audio(texto: str) -> Path:
     log.info("Gerando narração com gTTS...")
@@ -112,22 +112,20 @@ async def baixar_video_fundo(palavras: str) -> Path:
         log.info(f"Baixando vídeo: {url_video[:60]}...")
         resp = await c.get(url_video, follow_redirects=True, timeout=120)
         resp.raise_for_status()
-        video_path = TMP / "fundo.mp4"
-        video_path.write_bytes(resp.content)
-        log.info(f"Vídeo salvo: {video_path}")
-        return video_path
+    video_path = TMP / "fundo.mp4"
+    video_path.write_bytes(resp.content)
+    log.info(f"Vídeo salvo: {video_path}")
+    return video_path
 
 def montar_video(video_path: Path, audio_path: Path, titulo: str) -> Path:
     log.info("Montando vídeo final...")
-    from moviepy.video.io.VideoFileClip import VideoFileClip
-    from moviepy.audio.io.AudioFileClip import AudioFileClip
-    from moviepy.video.fx.resize import resize
-    from moviepy.video.compositing.concatenate import concatenate_videoclips
+    from moviepy import VideoFileClip, AudioFileClip, concatenate_videoclips
 
     audio = AudioFileClip(str(audio_path))
     duracao = audio.duration
 
     video_raw = VideoFileClip(str(video_path))
+
     if video_raw.duration < duracao:
         repeticoes = int(duracao / video_raw.duration) + 1
         clips = [video_raw] * repeticoes
@@ -135,9 +133,9 @@ def montar_video(video_path: Path, audio_path: Path, titulo: str) -> Path:
     else:
         video_loop = video_raw
 
-    video_clip = video_loop.subclip(0, duracao)
-    video_clip = resize(video_clip, (1080, 1920))
-    video_final = video_clip.set_audio(audio)
+    video_clip = video_loop.subclipped(0, duracao)
+    video_clip = video_clip.resized((1080, 1920))
+    video_final = video_clip.with_audio(audio)
 
     output_path = TMP / "video_final.mp4"
     video_final.write_videofile(
@@ -167,18 +165,18 @@ async def enviar_telegram_video(video_path: Path, caption: str):
                 files={"video": ("video.mp4", f, "video/mp4")},
             )
         r.raise_for_status()
-        log.info("Vídeo enviado com sucesso!")
+    log.info("Vídeo enviado com sucesso!")
 
 async def pipeline():
     tema = random.choice(TEMAS)
     log.info(f"Tema escolhido: {tema['titulo']}")
     await enviar_telegram_texto(f"🎬 <b>Gerando vídeo TikTok...</b>\n📌 Tema: {tema['titulo']}")
     try:
-        roteiro   = await gerar_roteiro(tema)
-        audio     = await gerar_audio(roteiro)
-        video_bg  = await baixar_video_fundo(tema["palavras"])
+        roteiro  = await gerar_roteiro(tema)
+        audio    = await gerar_audio(roteiro)
+        video_bg = await baixar_video_fundo(tema["palavras"])
         video_out = montar_video(video_bg, audio, tema["titulo"])
-        caption   = f"🎬 {tema['titulo']}\n\n📲 Poste no TikTok agora!"
+        caption = f"🎬 {tema['titulo']}\n\n📲 Poste no TikTok agora!"
         await enviar_telegram_video(video_out, caption)
     except Exception as e:
         log.error(f"Erro no pipeline: {e}")
@@ -195,7 +193,7 @@ async def main():
         return
     log.info(f"Aguardando horário de envio: {HORA_ENVIO}:00 BRT")
     while True:
-        agora = datetime.utcnow()
+        agora    = datetime.utcnow()
         hora_brt = (agora.hour - 3) % 24
         if hora_brt == HORA_ENVIO and agora.minute == 0:
             await pipeline()
