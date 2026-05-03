@@ -5,7 +5,7 @@ Roda no Railway. Requer: TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, OPENAI_API_KEY,
                           PEXELS_KEY
 """
 
-import os, asyncio, logging, random, httpx, json, re, tempfile, textwrap
+import os, asyncio, logging, random, httpx, json, re, tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -22,29 +22,28 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 OPENAI_API_KEY   = os.environ.get("OPENAI_API_KEY", "").strip()
 PEXELS_KEY       = os.environ.get("PEXELS_KEY", "").strip()
 
-HORA_ENVIO  = 10        # gera e envia às 10h BRT
-MODO_TESTE  = True      # True = roda imediatamente ao iniciar
+HORA_ENVIO  = 10
+MODO_TESTE  = True
 
 TMP = Path(tempfile.gettempdir())
 
 TEMAS = [
-    {"titulo": "O homem que viveu anos fingindo ser médico no Brasil",       "palavras": "hospital doctor crime"},
+    {"titulo": "O homem que viveu anos fingindo ser médico no Brasil",        "palavras": "hospital doctor crime"},
     {"titulo": "O serial killer que trabalhava como palhaço de festas infantis", "palavras": "clown dark mystery"},
-    {"titulo": "O país onde dormir no trabalho é sinal de dedicação",         "palavras": "japan office work"},
-    {"titulo": "O homem que sobreviveu a dois ataques nucleares",             "palavras": "explosion nuclear history"},
-    {"titulo": "A mulher que descobriu que era irmã do próprio marido",       "palavras": "family drama shock"},
-    {"titulo": "O avião que ficou 37 anos esquecido em um aeroporto",        "palavras": "airplane airport abandoned"},
-    {"titulo": "O país onde é ilegal sorrir para a polícia",                  "palavras": "police law bizarre"},
-    {"titulo": "O homem que ganhou na loteria 7 vezes",                      "palavras": "money lottery winner"},
-    {"titulo": "A cidade submersa que reaparece quando a represa seca",      "palavras": "underwater city lake"},
-    {"titulo": "O crime perfeito que foi resolvido por uma selfie",          "palavras": "crime investigation phone"},
-    {"titulo": "O bebê que nasceu duas vezes",                               "palavras": "baby hospital miracle"},
-    {"titulo": "O homem que foi enterrado vivo e sobreviveu",                "palavras": "cemetery survival dark"},
-    {"titulo": "A ilha que aparece e desaparece no mapa",                    "palavras": "island ocean mystery"},
-    {"titulo": "O prisioneiro que escapou da prisão três vezes pelo correio", "palavras": "prison escape crime"},
+    {"titulo": "O país onde dormir no trabalho é sinal de dedicação",          "palavras": "japan office work"},
+    {"titulo": "O homem que sobreviveu a dois ataques nucleares",              "palavras": "explosion nuclear history"},
+    {"titulo": "A mulher que descobriu que era irmã do próprio marido",        "palavras": "family drama shock"},
+    {"titulo": "O avião que ficou 37 anos esquecido em um aeroporto",         "palavras": "airplane airport abandoned"},
+    {"titulo": "O país onde é ilegal sorrir para a polícia",                   "palavras": "police law bizarre"},
+    {"titulo": "O homem que ganhou na loteria 7 vezes",                       "palavras": "money lottery winner"},
+    {"titulo": "A cidade submersa que reaparece quando a represa seca",       "palavras": "underwater city lake"},
+    {"titulo": "O crime perfeito que foi resolvido por uma selfie",           "palavras": "crime investigation phone"},
+    {"titulo": "O bebê que nasceu duas vezes",                                "palavras": "baby hospital miracle"},
+    {"titulo": "O homem que foi enterrado vivo e sobreviveu",                 "palavras": "cemetery survival dark"},
+    {"titulo": "A ilha que aparece e desaparece no mapa",                     "palavras": "island ocean mystery"},
+    {"titulo": "O prisioneiro que escapou da prisão três vezes pelo correio",  "palavras": "prison escape crime"},
 ]
 
-# ——————————————— HELPERS ———————————————
 def checar_variaveis():
     ok = True
     for nome, val in [
@@ -70,7 +69,6 @@ O roteiro deve:
 - Ter linguagem simples e envolvente
 - Terminar com call to action ("Segue para mais histórias assim")
 Retorne APENAS o texto da narração, sem indicações de cena."""
-
     async with httpx.AsyncClient(timeout=30) as c:
         r = await c.post(
             "https://api.openai.com/v1/chat/completions",
@@ -93,7 +91,7 @@ async def gerar_audio(texto: str) -> Path:
 
 async def baixar_video_fundo(palavras: str) -> Path:
     log.info(f"Buscando vídeo de fundo: {palavras}")
-    async with httpx.AsyncClient(timeout=30) as c:
+    async with httpx.AsyncClient(timeout=60) as c:
         r = await c.get(
             "https://api.pexels.com/videos/search",
             headers={"Authorization": PEXELS_KEY},
@@ -112,7 +110,7 @@ async def baixar_video_fundo(palavras: str) -> Path:
         if not url_video:
             url_video = video["video_files"][0]["link"]
         log.info(f"Baixando vídeo: {url_video[:60]}...")
-        resp = await c.get(url_video, follow_redirects=True, timeout=60)
+        resp = await c.get(url_video, follow_redirects=True, timeout=120)
         resp.raise_for_status()
         video_path = TMP / "fundo.mp4"
         video_path.write_bytes(resp.content)
@@ -121,9 +119,10 @@ async def baixar_video_fundo(palavras: str) -> Path:
 
 def montar_video(video_path: Path, audio_path: Path, titulo: str) -> Path:
     log.info("Montando vídeo final...")
-    import subprocess
-    from moviepy.editor import VideoFileClip, AudioFileClip, CompositeVideoClip, TextClip
-    from moviepy.editor import concatenate_videoclips
+    from moviepy.video.io.VideoFileClip import VideoFileClip
+    from moviepy.audio.io.AudioFileClip import AudioFileClip
+    from moviepy.video.fx.resize import resize
+    from moviepy.video.compositing.concatenate import concatenate_videoclips
 
     audio = AudioFileClip(str(audio_path))
     duracao = audio.duration
@@ -131,11 +130,13 @@ def montar_video(video_path: Path, audio_path: Path, titulo: str) -> Path:
     video_raw = VideoFileClip(str(video_path))
     if video_raw.duration < duracao:
         repeticoes = int(duracao / video_raw.duration) + 1
-        video_loop = concatenate_videoclips([video_raw] * repeticoes)
+        clips = [video_raw] * repeticoes
+        video_loop = concatenate_videoclips(clips)
     else:
         video_loop = video_raw
 
-    video_clip = video_loop.subclip(0, duracao).resize((1080, 1920))
+    video_clip = video_loop.subclip(0, duracao)
+    video_clip = resize(video_clip, (1080, 1920))
     video_final = video_clip.set_audio(audio)
 
     output_path = TMP / "video_final.mp4"
@@ -188,12 +189,10 @@ async def main():
     if not checar_variaveis():
         log.error("VARIAVEL AUSENTE — abortando.")
         return
-
     if MODO_TESTE:
         log.info("MODO TESTE — rodando pipeline agora!")
         await pipeline()
         return
-
     log.info(f"Aguardando horário de envio: {HORA_ENVIO}:00 BRT")
     while True:
         agora = datetime.utcnow()
