@@ -2,3 +2,4 @@ httpx==0.27.0
 openai>=1.0.0
 moviepy>=2.0.0
 imageio-ffmpeg
+gtts>=2.3.0
