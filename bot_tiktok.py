@@ -134,16 +134,18 @@ def montar_video(video_path: Path, audio_path: Path, titulo: str) -> Path:
         video_loop = video_raw
 
     video_clip = video_loop.subclipped(0, duracao)
-    video_clip = video_clip.resized((1080, 1920))
-    video_final = video_clip.with_audio(audio)
+    video_clip = video_clip.resized(height=1080)
+video_final = video_clip.with_audio(audio)
+output_path = TMP / "video_final.mp4"
+video_final.write_videofile(
+    str(output_path),
+    fps=24,
+    codec="libx264",
+    audio_codec="aac",
+    preset="ultrafast",   # <-- essencial no Railway
+    threads=2,            # <-- limita uso de CPU
+    logger=None,
 
-    output_path = TMP / "video_final.mp4"
-    video_final.write_videofile(
-        str(output_path),
-        fps=24,
-        codec="libx264",
-        audio_codec="aac",
-        logger=None,
     )
     log.info(f"Vídeo montado: {output_path}")
     return output_path
