@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-Bot TikTok Automático - Gera vídeo diário e envia pelo Telegram
-Roda no Railway. Requer: TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, OPENAI_API_KEY, PEXELS_KEY
-"""
 import os
 import asyncio
 import logging
@@ -11,6 +7,9 @@ import httpx
 import tempfile
 from datetime import datetime
 from pathlib import Path
+
+import imageio_ffmpeg
+os.environ["IMAGEIO_FFMPEG_EXE"] = imageio_ffmpeg.get_ffmpeg_exe()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -132,6 +131,8 @@ async def baixar_video_fundo(palavras):
 
 def montar_video(video_path, audio_path, titulo):
     log.info("Montando video final...")
+    import moviepy.config as mpy_config
+    mpy_config.FFMPEG_BINARY = imageio_ffmpeg.get_ffmpeg_exe()
     from moviepy import VideoFileClip, AudioFileClip, concatenate_videoclips
     audio = AudioFileClip(str(audio_path))
     duracao = audio.duration
