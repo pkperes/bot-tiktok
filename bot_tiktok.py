@@ -6,7 +6,7 @@ import random
 import httpx
 import tempfile
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import imageio_ffmpeg
@@ -232,13 +232,12 @@ async def main():
     log.info(f"Aguardando horarios de envio: {HORAS_ENVIO} BRT")
     horas_disparadas = set()
     while True:
-        agora = datetime.utcnow()
+        agora = datetime.now(timezone.utc)
         hora_brt = (agora.hour - 3) % 24
         chave = f"{agora.date()}-{hora_brt}"
         if hora_brt in HORAS_ENVIO and agora.minute == 0 and chave not in horas_disparadas:
             horas_disparadas.add(chave)
             await pipeline()
-            # limpa chaves antigas para nao acumular memoria
             if len(horas_disparadas) > 10:
                 horas_disparadas = set(list(horas_disparadas)[-5:])
         await asyncio.sleep(30)
