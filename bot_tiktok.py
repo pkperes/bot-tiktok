@@ -24,7 +24,7 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 PEXELS_KEY = os.environ.get("PEXELS_KEY", "").strip()
 
-HORA_ENVIO = 10
+HORAS_ENVIO = [10, 21]
 MODO_TESTE = False
 
 TMP = Path(tempfile.gettempdir())
@@ -44,6 +44,20 @@ TEMAS = [
     {"titulo": "O homem que foi enterrado vivo e sobreviveu", "palavras": "cemetery survival dark"},
     {"titulo": "A ilha que aparece e desaparece no mapa", "palavras": "island ocean mystery"},
     {"titulo": "O prisioneiro que escapou da prisao tres vezes pelo correio", "palavras": "prison escape crime"},
+    {"titulo": "A crianca que se lembrava de uma vida passada com detalhes assustadores", "palavras": "child mystery supernatural"},
+    {"titulo": "O homem que viveu 10 anos numa floresta sem contato humano", "palavras": "forest survival alone"},
+    {"titulo": "A cidade fantasma que ainda aparece no Google Maps", "palavras": "ghost town abandoned city"},
+    {"titulo": "O cientista que testou veneno em si mesmo e sobreviveu", "palavras": "science experiment dark"},
+    {"titulo": "A mulher que acordou falando outro idioma apos cirurgia", "palavras": "hospital surgery mystery"},
+    {"titulo": "O trem que desapareceu com 92 passageiros e nunca foi encontrado", "palavras": "train mystery disappear"},
+    {"titulo": "O pais onde e crime jogar chiclete no chao", "palavras": "singapore law strange"},
+    {"titulo": "A fazenda onde animais fugiam toda noite sem explicacao", "palavras": "farm animals mystery dark"},
+    {"titulo": "O homem que foi condenado pelo mesmo crime duas vezes", "palavras": "court crime justice"},
+    {"titulo": "A mulher que viveu 40 anos sem saber que tinha um orgao a mais", "palavras": "hospital medical rare"},
+    {"titulo": "O bilhete de loteria que destruiu uma familia inteira", "palavras": "lottery money drama"},
+    {"titulo": "O vilarejo onde ninguem envelhece normalmente", "palavras": "village mystery aging"},
+    {"titulo": "O serial killer que foi pego porque gostava de dar autografos", "palavras": "crime detective investigation"},
+    {"titulo": "A explosao que criou um lago no meio do deserto", "palavras": "explosion desert water"},
 ]
 
 
@@ -56,9 +70,9 @@ def checar_variaveis():
         ("PEXELS_KEY", PEXELS_KEY),
     ]:
         if val:
-            log.info(f"  OK: {nome} = {val[:8]}...")
+            log.info(f" OK: {nome} = {val[:8]}...")
         else:
-            log.error(f"  AUSENTE: {nome}")
+            log.error(f" AUSENTE: {nome}")
             ok = False
     return ok
 
@@ -86,9 +100,9 @@ async def gerar_roteiro(tema):
             },
         )
         r.raise_for_status()
-    texto = r.json()["choices"][0]["message"]["content"].strip()
-    log.info(f"Roteiro gerado: {len(texto)} chars")
-    return texto
+        texto = r.json()["choices"][0]["message"]["content"].strip()
+        log.info(f"Roteiro gerado: {len(texto)} chars")
+        return texto
 
 
 async def gerar_audio(texto):
@@ -107,9 +121,9 @@ async def gerar_audio(texto):
             },
         )
         r.raise_for_status()
-    audio_path.write_bytes(r.content)
-    log.info(f"Audio salvo: {audio_path} ({len(r.content)//1024}KB)")
-    return audio_path
+        audio_path.write_bytes(r.content)
+        log.info(f"Audio salvo: {audio_path} ({len(r.content)//1024}KB)")
+        return audio_path
 
 
 async def baixar_video_fundo(palavras):
@@ -135,16 +149,15 @@ async def baixar_video_fundo(palavras):
         log.info(f"Baixando video SD: {url_video[:60]}...")
         resp = await c.get(url_video, follow_redirects=True, timeout=120)
         resp.raise_for_status()
-    video_path = TMP / "fundo.mp4"
-    video_path.write_bytes(resp.content)
-    log.info(f"Video salvo: {video_path} ({len(resp.content)//1024}KB)")
-    return video_path
+        video_path = TMP / "fundo.mp4"
+        video_path.write_bytes(resp.content)
+        log.info(f"Video salvo: {video_path} ({len(resp.content)//1024}KB)")
+        return video_path
 
 
 def montar_video(video_path, audio_path, titulo):
     log.info("Montando video final com ffmpeg direto...")
     output_path = TMP / "video_final.mp4"
-
     cmd = [
         FFMPEG, "-y",
         "-stream_loop", "-1",
@@ -161,14 +174,11 @@ def montar_video(video_path, audio_path, titulo):
         "-threads", "1",
         str(output_path),
     ]
-
     log.info("Executando ffmpeg...")
     result = subprocess.run(cmd, capture_output=True, text=True)
-
     if result.returncode != 0:
         log.error(f"FFMPEG stderr: {result.stderr[-800:]}")
         raise Exception(f"FFMPEG falhou com codigo {result.returncode}")
-
     log.info(f"Video montado: {output_path}")
     return output_path
 
@@ -190,7 +200,7 @@ async def enviar_telegram_video(video_path, caption):
                 data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption},
                 files={"video": ("video.mp4", f, "video/mp4")},
             )
-        r.raise_for_status()
+            r.raise_for_status()
     log.info("Video enviado com sucesso!")
 
 
@@ -219,13 +229,18 @@ async def main():
         log.info("MODO TESTE - rodando pipeline agora!")
         await pipeline()
         return
-    log.info(f"Aguardando horario de envio: {HORA_ENVIO}:00 BRT")
+    log.info(f"Aguardando horarios de envio: {HORAS_ENVIO} BRT")
+    horas_disparadas = set()
     while True:
         agora = datetime.utcnow()
         hora_brt = (agora.hour - 3) % 24
-        if hora_brt == HORA_ENVIO and agora.minute == 0:
+        chave = f"{agora.date()}-{hora_brt}"
+        if hora_brt in HORAS_ENVIO and agora.minute == 0 and chave not in horas_disparadas:
+            horas_disparadas.add(chave)
             await pipeline()
-            await asyncio.sleep(61)
+            # limpa chaves antigas para nao acumular memoria
+            if len(horas_disparadas) > 10:
+                horas_disparadas = set(list(horas_disparadas)[-5:])
         await asyncio.sleep(30)
 
 
