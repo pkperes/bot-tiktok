@@ -5,11 +5,12 @@ import logging
 import random
 import httpx
 import tempfile
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
 import imageio_ffmpeg
-os.environ["IMAGEIO_FFMPEG_EXE"] = imageio_ffmpeg.get_ffmpeg_exe()
+FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -130,30 +131,37 @@ async def baixar_video_fundo(palavras):
 
 
 def montar_video(video_path, audio_path, titulo):
-    log.info("Montando video final...")
-    import moviepy.config as mpy_config
-    mpy_config.FFMPEG_BINARY = imageio_ffmpeg.get_ffmpeg_exe()
-    from moviepy import VideoFileClip, AudioFileClip, concatenate_videoclips
-    audio = AudioFileClip(str(audio_path))
-    duracao = audio.duration
-    video_raw = VideoFileClip(str(video_path))
-    if video_raw.duration < duracao:
-        repeticoes = int(duracao / video_raw.duration) + 1
-        clips = [video_raw] * repeticoes
-        video_loop = concatenate_videoclips(clips)
-    else:
-        video_loop = video_raw
-    video_clip = video_loop.subclipped(0, duracao)
-    video_clip = video_clip.resized((1080, 1920))
-    video_final = video_clip.with_audio(audio)
+    log.info("Montando video final com ffmpeg direto...")
+    log.info(f"FFMPEG path: {FFMPEG}")
     output_path = TMP / "video_final.mp4"
-    video_final.write_videofile(
+    loop_path = TMP / "loop.mp4"
+
+    # Primeiro: criar loop do video para cobrir o audio
+    cmd_loop = [
+        FFMPEG, "-y",
+        "-stream_loop", "-1",
+        "-i", str(video_path),
+        "-i", str(audio_path),
+        "-shortest",
+        "-c:v", "libx264",
+        "-c:a", "aac",
+        "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920",
+        "-r", "24",
+        "-preset", "fast",
         str(output_path),
-        fps=24,
-        codec="libx264",
-        audio_codec="aac",
-        logger=None,
+    ]
+
+    log.info("Executando ffmpeg...")
+    result = subprocess.run(
+        cmd_loop,
+        capture_output=True,
+        text=True,
     )
+
+    if result.returncode != 0:
+        log.error(f"FFMPEG stderr: {result.stderr[-500:]}")
+        raise Exception(f"FFMPEG falhou com codigo {result.returncode}")
+
     log.info(f"Video montado: {output_path}")
     return output_path
 
