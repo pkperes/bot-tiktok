@@ -92,12 +92,23 @@ async def gerar_roteiro(tema):
 
 
 async def gerar_audio(texto):
-    log.info("Gerando narracao com gTTS...")
-    from gtts import gTTS
-    tts = gTTS(text=texto, lang="pt", slow=False)
+    log.info("Gerando narracao com OpenAI TTS (voz nova)...")
     audio_path = TMP / "naracao.mp3"
-    tts.save(str(audio_path))
-    log.info(f"Audio salvo: {audio_path}")
+    async with httpx.AsyncClient(timeout=60) as c:
+        r = await c.post(
+            "https://api.openai.com/v1/audio/speech",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+            json={
+                "model": "tts-1",
+                "input": texto,
+                "voice": "nova",
+                "response_format": "mp3",
+                "speed": 1.05,
+            },
+        )
+        r.raise_for_status()
+    audio_path.write_bytes(r.content)
+    log.info(f"Audio salvo: {audio_path} ({len(r.content)//1024}KB)")
     return audio_path
 
 
@@ -114,17 +125,13 @@ async def baixar_video_fundo(palavras):
         if not videos:
             raise Exception("Nenhum video encontrado no Pexels")
         video = random.choice(videos)
-        # Preferir SD pequeno para economizar memoria
         url_video = None
-        for qualidade in ("sd",):
-            for f in video["video_files"]:
-                if f.get("quality") == qualidade and f.get("width", 9999) <= 640:
-                    url_video = f["link"]
-                    break
-            if url_video:
+        for f in video["video_files"]:
+            if f.get("quality") == "sd" and f.get("width", 9999) <= 640:
+                url_video = f["link"]
                 break
         if not url_video:
-            url_video = video["video_files"][-1]["link"]  # menor disponivel
+            url_video = video["video_files"][-1]["link"]
         log.info(f"Baixando video SD: {url_video[:60]}...")
         resp = await c.get(url_video, follow_redirects=True, timeout=120)
         resp.raise_for_status()
