@@ -25,7 +25,7 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 PEXELS_KEY = os.environ.get("PEXELS_KEY", "").strip()
 
 HORA_ENVIO = 10
-MODO_TESTE = True
+MODO_TESTE = False
 
 TMP = Path(tempfile.gettempdir())
 
