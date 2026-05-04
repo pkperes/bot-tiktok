@@ -107,59 +107,59 @@ async def baixar_video_fundo(palavras):
         r = await c.get(
             "https://api.pexels.com/videos/search",
             headers={"Authorization": PEXELS_KEY},
-            params={"query": palavras, "per_page": 10, "orientation": "portrait"},
+            params={"query": palavras, "per_page": 15, "orientation": "portrait"},
         )
         r.raise_for_status()
         videos = r.json().get("videos", [])
         if not videos:
             raise Exception("Nenhum video encontrado no Pexels")
         video = random.choice(videos)
+        # Preferir SD pequeno para economizar memoria
         url_video = None
-        for f in video["video_files"]:
-            if f.get("quality") in ("hd", "sd") and f.get("width", 0) <= 1080:
-                url_video = f["link"]
+        for qualidade in ("sd",):
+            for f in video["video_files"]:
+                if f.get("quality") == qualidade and f.get("width", 9999) <= 640:
+                    url_video = f["link"]
+                    break
+            if url_video:
                 break
         if not url_video:
-            url_video = video["video_files"][0]["link"]
-        log.info(f"Baixando video: {url_video[:60]}...")
+            url_video = video["video_files"][-1]["link"]  # menor disponivel
+        log.info(f"Baixando video SD: {url_video[:60]}...")
         resp = await c.get(url_video, follow_redirects=True, timeout=120)
         resp.raise_for_status()
     video_path = TMP / "fundo.mp4"
     video_path.write_bytes(resp.content)
-    log.info(f"Video salvo: {video_path}")
+    log.info(f"Video salvo: {video_path} ({len(resp.content)//1024}KB)")
     return video_path
 
 
 def montar_video(video_path, audio_path, titulo):
     log.info("Montando video final com ffmpeg direto...")
-    log.info(f"FFMPEG path: {FFMPEG}")
     output_path = TMP / "video_final.mp4"
-    loop_path = TMP / "loop.mp4"
 
-    # Primeiro: criar loop do video para cobrir o audio
-    cmd_loop = [
+    cmd = [
         FFMPEG, "-y",
         "-stream_loop", "-1",
         "-i", str(video_path),
         "-i", str(audio_path),
         "-shortest",
         "-c:v", "libx264",
-        "-c:a", "aac",
-        "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920",
+        "-crf", "28",
+        "-preset", "ultrafast",
+        "-vf", "scale=540:960:force_original_aspect_ratio=increase,crop=540:960",
         "-r", "24",
-        "-preset", "fast",
+        "-c:a", "aac",
+        "-b:a", "96k",
+        "-threads", "1",
         str(output_path),
     ]
 
     log.info("Executando ffmpeg...")
-    result = subprocess.run(
-        cmd_loop,
-        capture_output=True,
-        text=True,
-    )
+    result = subprocess.run(cmd, capture_output=True, text=True)
 
     if result.returncode != 0:
-        log.error(f"FFMPEG stderr: {result.stderr[-500:]}")
+        log.error(f"FFMPEG stderr: {result.stderr[-800:]}")
         raise Exception(f"FFMPEG falhou com codigo {result.returncode}")
 
     log.info(f"Video montado: {output_path}")
