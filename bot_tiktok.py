@@ -61,7 +61,7 @@ def checar_variaveis():
 
 
 def limpar_texto_overlay(texto, max_len=60):
-    # pega primeira linha/frase, limita tamanho e remove chars que quebram o drawtext
+    """Pega primeira linha/frase, limita tamanho e remove chars que quebram o drawtext."""
     if not texto:
         return ""
     t = texto.replace("
@@ -77,17 +77,15 @@ def limpar_texto_overlay(texto, max_len=60):
 async def gerar_tema_curioso_sombrio():
     log.info("Gerando tema curioso/sombrio via OpenAI...")
     prompt = (
-        "Gere APENAS 1 ideia de tema curioso e sombrio para um video curto do TikTok "
-        "em portugues do Brasil.
+        "Gere APENAS 1 ideia de tema curioso e sombrio para um video curto do TikTok em portugues do Brasil.
 "
         "O tema deve ser misterioso ou macabro, mas sem violencia grafica.
 "
-        "Responda EXATAMENTE neste formato JSON, em uma unica linha:
-"
+        'Responda EXATAMENTE neste formato JSON, em uma unica linha:
+'
         '{"titulo": "TITULO EM PORTUGUES", "palavras": "keywords em ingles separadas por espaco"}
 '
-        "As keywords devem ser em ingles para busca no Pexels "
-        "(ex: 'dark forest mystery night')."
+        "As keywords devem ser em ingles para busca no Pexels (ex: dark forest mystery night)."
     )
 
     async with httpx.AsyncClient(timeout=30) as c:
