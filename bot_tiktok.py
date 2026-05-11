@@ -92,6 +92,35 @@ def gerar_nome_video(titulo: str) -> Path:
     return TMP / f"{base}.mp4"
 
 
+def normalizar_tema(bruto):
+    """
+    Garante que sempre volte um dict com 'titulo' e 'palavras'.
+    Aceita dict, lista de dicts ou qualquer outra coisa -> fallback.
+    """
+    tema = None
+    if isinstance(bruto, dict):
+        tema = bruto
+    elif isinstance(bruto, list) and bruto and isinstance(bruto[0], dict):
+        tema = bruto[0]
+
+    if not isinstance(tema, dict):
+        return FALLBACK_TEMA.copy()
+
+    titulo = str(tema.get("titulo") or "").strip()
+    palavras = tema.get("palavras")
+    if isinstance(palavras, list):
+        palavras = " ".join(str(p) for p in palavras)
+    else:
+        palavras = str(palavras or "").strip()
+
+    if not titulo:
+        titulo = FALLBACK_TEMA["titulo"]
+    if not palavras:
+        palavras = FALLBACK_TEMA["palavras"]
+
+    return {"titulo": titulo, "palavras": palavras}
+
+
 async def gerar_tema_curioso_sombrio():
     log.info("Gerando tema curioso/sombrio via OpenAI...")
     prompt = """
@@ -124,9 +153,10 @@ As keywords devem ser em ingles para busca no Pexels (ex: "dark forest mystery n
         conteudo = "\n".join(linhas).strip()
 
     try:
-        tema = json.loads(conteudo)
+        bruto = json.loads(conteudo)
+        tema = normalizar_tema(bruto)
         log.info(
-            f"Tema gerado: {tema.get('titulo', '')} / {tema.get('palavras', '')}"
+            f"Tema normalizado: {tema.get('titulo', '')} / {tema.get('palavras', '')}"
         )
         return tema
     except Exception as e:
@@ -263,7 +293,7 @@ def _render_video(video_path, audio_path, titulo, headline, width, height, crf, 
         FFMPEG,
         "-y",
         "-stream_loop",
-        "8",  # mais loops para cobrir toda a narracao
+        "8",  # loops suficientes para cobrir a narracao
         "-i",
         str(video_path),
         "-i",
@@ -301,7 +331,7 @@ def _render_video(video_path, audio_path, titulo, headline, width, height, crf, 
     if result.returncode != 0:
         log.error(f"FFMPEG stdout: {result.stdout[-800:]}")
         log.error(f"FFMPEG stderr: {result.stderr[-800:]}")
-        raise Exception(f"FFMPEG falhou com codigo {result.returncode}")
+        raise Exception(f"FFMPEG falhou com codigo {resultreturncode}")
 
     log.info(f"Video montado: {output_path}")
     return output_path
