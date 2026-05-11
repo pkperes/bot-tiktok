@@ -222,11 +222,11 @@ async def baixar_video_fundo(palavras):
 
 
 def montar_video(video_path, audio_path, titulo, headline):
-    log.info("Montando video final com ffmpeg direto...")
+    log.info("Montando video final com ffmpeg direto (720p 9:16)...")
     output_path = TMP / "video_final.mp4"
 
-    # base: crop 9:16
-    vf = "scale=540:960:force_original_aspect_ratio=increase,crop=540:960"
+    # base: upscaling + crop para 9:16 em 720x1280 (HD vertical)
+    vf = "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280"
 
     # tenta adicionar texto se tiver fonte e texto limpo
     texto_overlay = limpar_texto_overlay(headline or titulo, max_len=60)
@@ -235,9 +235,9 @@ def montar_video(video_path, audio_path, titulo, headline):
         vf += (
             f",drawtext=fontfile='{FONT_PATH}':"
             f"text='{texto_overlay}':"
-            "fontcolor=white:fontsize=36:"
-            "x=(w-text_w)/2:y=80:"
-            "box=1:boxcolor=0x000000aa:boxborderw=12"
+            "fontcolor=white:fontsize=42:"
+            "x=(w-text_w)/2:y=100:"
+            "box=1:boxcolor=0x000000aa:boxborderw=14"
         )
     else:
         log.warning(
@@ -254,25 +254,30 @@ def montar_video(video_path, audio_path, titulo, headline):
         str(video_path),
         "-i",
         str(audio_path),
+        # garante video + audio corretos
         "-map",
         "0:v:0",
         "-map",
         "1:a:0",
         "-shortest",
+        # video: H.264 em 720x1280, qualidade melhor (CRF menor, preset menos agressivo)
         "-c:v",
         "libx264",
-        "-crf",
-        "28",
         "-preset",
-        "ultrafast",
+        "veryfast",   # melhor qualidade que ultrafast
+        "-crf",
+        "20",         # ~4–6 Mbps em 720p na prática
         "-vf",
         vf,
         "-r",
-        "24",
+        "30",         # 30 fps é padrão bom para TikTok
+        "-pix_fmt",
+        "yuv420p",    # formato esperado pela maioria das plataformas
+        # audio: AAC em bitrate um pouco maior
         "-c:a",
         "aac",
         "-b:a",
-        "96k",
+        "128k",
         "-threads",
         "1",
         str(output_path),
