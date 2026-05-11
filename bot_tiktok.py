@@ -6,6 +6,7 @@ import random
 import httpx
 import tempfile
 import subprocess
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -29,36 +30,15 @@ MODO_TESTE = False
 
 TMP = Path(tempfile.gettempdir())
 
-TEMAS = [
-    {"titulo": "O homem que viveu anos fingindo ser medico no Brasil", "palavras": "hospital doctor crime"},
-    {"titulo": "O serial killer que trabalhava como palhaco de festas infantis", "palavras": "clown dark mystery"},
-    {"titulo": "O pais onde dormir no trabalho e sinal de dedicacao", "palavras": "japan office work"},
-    {"titulo": "O homem que sobreviveu a dois ataques nucleares", "palavras": "explosion nuclear history"},
-    {"titulo": "A mulher que descobriu que era irma do proprio marido", "palavras": "family drama shock"},
-    {"titulo": "O aviao que ficou 37 anos esquecido em um aeroporto", "palavras": "airplane airport abandoned"},
-    {"titulo": "O pais onde e ilegal sorrir para a policia", "palavras": "police law bizarre"},
-    {"titulo": "O homem que ganhou na loteria 7 vezes", "palavras": "money lottery winner"},
-    {"titulo": "A cidade submersa que reaparece quando a represa seca", "palavras": "underwater city lake"},
-    {"titulo": "O crime perfeito que foi resolvido por uma selfie", "palavras": "crime investigation phone"},
-    {"titulo": "O bebe que nasceu duas vezes", "palavras": "baby hospital miracle"},
-    {"titulo": "O homem que foi enterrado vivo e sobreviveu", "palavras": "cemetery survival dark"},
-    {"titulo": "A ilha que aparece e desaparece no mapa", "palavras": "island ocean mystery"},
-    {"titulo": "O prisioneiro que escapou da prisao tres vezes pelo correio", "palavras": "prison escape crime"},
-    {"titulo": "A crianca que se lembrava de uma vida passada com detalhes assustadores", "palavras": "child mystery supernatural"},
-    {"titulo": "O homem que viveu 10 anos numa floresta sem contato humano", "palavras": "forest survival alone"},
-    {"titulo": "A cidade fantasma que ainda aparece no Google Maps", "palavras": "ghost town abandoned city"},
-    {"titulo": "O cientista que testou veneno em si mesmo e sobreviveu", "palavras": "science experiment dark"},
-    {"titulo": "A mulher que acordou falando outro idioma apos cirurgia", "palavras": "hospital surgery mystery"},
-    {"titulo": "O trem que desapareceu com 92 passageiros e nunca foi encontrado", "palavras": "train mystery disappear"},
-    {"titulo": "O pais onde e crime jogar chiclete no chao", "palavras": "singapore law strange"},
-    {"titulo": "A fazenda onde animais fugiam toda noite sem explicacao", "palavras": "farm animals mystery dark"},
-    {"titulo": "O homem que foi condenado pelo mesmo crime duas vezes", "palavras": "court crime justice"},
-    {"titulo": "A mulher que viveu 40 anos sem saber que tinha um orgao a mais", "palavras": "hospital medical rare"},
-    {"titulo": "O bilhete de loteria que destruiu uma familia inteira", "palavras": "lottery money drama"},
-    {"titulo": "O vilarejo onde ninguem envelhece normalmente", "palavras": "village mystery aging"},
-    {"titulo": "O serial killer que foi pego porque gostava de dar autografos", "palavras": "crime detective investigation"},
-    {"titulo": "A explosao que criou um lago no meio do deserto", "palavras": "explosion desert water"},
-]
+# controle de repeticao de tema por execucao do bot
+MAX_REPETICOES_TEMA = 2
+historico_temas = {}
+
+# fallback simples caso a geracao de tema falhe
+FALLBACK_TEMA = {
+    "titulo": "Uma historia curiosa e sombria que quase ninguem conhece",
+    "palavras": "dark mystery story night",
+}
 
 
 def checar_variaveis():
@@ -77,6 +57,73 @@ def checar_variaveis():
     return ok
 
 
+async def gerar_tema_curioso_sombrio():
+    log.info("Gerando tema curioso/sombrio via OpenAI...")
+    prompt = (
+        "Gere APENAS 1 ideia de tema curioso e sombrio para um video curto do TikTok "
+        "em portugues do Brasil.\n"
+        "O tema deve ser misterioso ou macabro, mas sem violencia grafica.\n"
+        "Responda EXATAMENTE neste formato JSON, em uma unica linha:\n"
+        '{"titulo": "TITULO EM PORTUGUES", "palavras": "keywords em ingles separadas por espaco"}\n'
+        "As keywords devem ser em ingles para busca no Pexels "
+        "(ex: 'dark forest mystery night')."
+    )
+
+    async with httpx.AsyncClient(timeout=30) as c:
+        r = await c.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+            json={
+                "model": "gpt-4o-mini",
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 200,
+            },
+        )
+        r.raise_for_status()
+        conteudo = r.json()["choices"][0]["message"]["content"].strip()
+
+    # tenta remover cercas de codigo ``` se vierem
+    if conteudo.startswith("```"):
+        linhas = conteudo.splitlines()
+        # remove primeira linha ```... e ultima se for ```
+        if linhas and linhas[0].startswith("```"):
+            linhas = linhas[1:]
+        if linhas and linhas[-1].strip().startswith("```"):
+            linhas = linhas[:-1]
+        conteudo = "\n".join(linhas).strip()
+
+    try:
+        tema = json.loads(conteudo)
+        log.info(
+            f"Tema gerado: {tema.get('titulo', '')} / {tema.get('palavras', '')}"
+        )
+        return tema
+    except Exception as e:
+        log.error(f"Falha ao parsear JSON do tema: {e} | conteudo={conteudo!r}")
+        return FALLBACK_TEMA.copy()
+
+
+async def escolher_tema():
+    global historico_temas
+    ultimo_tema = None
+    for _ in range(8):
+        tema = await gerar_tema_curioso_sombrio()
+        ultimo_tema = tema
+        titulo = tema.get("titulo", "").strip()
+        if not titulo:
+            continue
+
+        qtd = historico_temas.get(titulo, 0)
+        if qtd < MAX_REPETICOES_TEMA:
+            historico_temas[titulo] = qtd + 1
+            log.info(f"Tema escolhido (repeticao {historico_temas[titulo]}): {titulo}")
+            return tema
+
+    # se nao achou nenhum abaixo do limite, usa o ultimo gerado mesmo
+    log.info("Usando tema mesmo acima do limite de repeticoes.")
+    return ultimo_tema or FALLBACK_TEMA.copy()
+
+
 async def gerar_roteiro(tema):
     log.info("Gerando roteiro...")
     prompt = (
@@ -89,6 +136,7 @@ async def gerar_roteiro(tema):
         "- Terminar com call to action (Segue para mais historias assim)\n"
         "Retorne APENAS o texto da narracao, sem indicacoes de cena."
     )
+
     async with httpx.AsyncClient(timeout=30) as c:
         r = await c.post(
             "https://api.openai.com/v1/chat/completions",
@@ -101,8 +149,8 @@ async def gerar_roteiro(tema):
         )
         r.raise_for_status()
         texto = r.json()["choices"][0]["message"]["content"].strip()
-        log.info(f"Roteiro gerado: {len(texto)} chars")
-        return texto
+    log.info(f"Roteiro gerado: {len(texto)} chars")
+    return texto
 
 
 async def gerar_audio(texto):
@@ -122,8 +170,8 @@ async def gerar_audio(texto):
         )
         r.raise_for_status()
         audio_path.write_bytes(r.content)
-        log.info(f"Audio salvo: {audio_path} ({len(r.content)//1024}KB)")
-        return audio_path
+    log.info(f"Audio salvo: {audio_path} ({len(r.content)//1024}KB)")
+    return audio_path
 
 
 async def baixar_video_fundo(palavras):
@@ -136,49 +184,71 @@ async def baixar_video_fundo(palavras):
         )
         r.raise_for_status()
         videos = r.json().get("videos", [])
-        if not videos:
-            raise Exception("Nenhum video encontrado no Pexels")
-        video = random.choice(videos)
-        url_video = None
-        for f in video["video_files"]:
-            if f.get("quality") == "sd" and f.get("width", 9999) <= 640:
-                url_video = f["link"]
-                break
-        if not url_video:
-            url_video = video["video_files"][-1]["link"]
-        log.info(f"Baixando video SD: {url_video[:60]}...")
+    if not videos:
+        raise Exception("Nenhum video encontrado no Pexels")
+
+    video = random.choice(videos)
+    url_video = None
+    for f in video["video_files"]:
+        if f.get("quality") == "sd" and f.get("width", 9999) <= 640:
+            url_video = f["link"]
+            break
+    if not url_video:
+        url_video = video["video_files"][-1]["link"]
+
+    log.info(f"Baixando video SD: {url_video[:60]}...")
+    async with httpx.AsyncClient(timeout=120) as c:
         resp = await c.get(url_video, follow_redirects=True, timeout=120)
         resp.raise_for_status()
         video_path = TMP / "fundo.mp4"
         video_path.write_bytes(resp.content)
-        log.info(f"Video salvo: {video_path} ({len(resp.content)//1024}KB)")
-        return video_path
+    log.info(f"Video salvo: {video_path} ({len(resp.content)//1024}KB)")
+    return video_path
 
 
 def montar_video(video_path, audio_path, titulo):
     log.info("Montando video final com ffmpeg direto...")
     output_path = TMP / "video_final.mp4"
+
     cmd = [
-        FFMPEG, "-y",
-        "-stream_loop", "-1",
-        "-i", str(video_path),
-        "-i", str(audio_path),
+        FFMPEG,
+        "-y",
+        # loopa o video de fundo algumas vezes, nao infinito
+        "-stream_loop",
+        "4",
+        "-i",
+        str(video_path),
+        "-i",
+        str(audio_path),
         "-shortest",
-        "-c:v", "libx264",
-        "-crf", "28",
-        "-preset", "ultrafast",
-        "-vf", "scale=540:960:force_original_aspect_ratio=increase,crop=540:960",
-        "-r", "24",
-        "-c:a", "aac",
-        "-b:a", "96k",
-        "-threads", "1",
+        "-c:v",
+        "libx264",
+        "-crf",
+        "28",
+        "-preset",
+        "ultrafast",
+        "-vf",
+        "scale=540:960:force_original_aspect_ratio=increase,crop=540:960",
+        "-r",
+        "24",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "96k",
+        "-threads",
+        "1",
         str(output_path),
     ]
+
     log.info("Executando ffmpeg...")
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
     if result.returncode != 0:
+        log.error(f"FFMPEG stdout: {result.stdout[-800:]}")
         log.error(f"FFMPEG stderr: {result.stderr[-800:]}")
         raise Exception(f"FFMPEG falhou com codigo {result.returncode}")
+
     log.info(f"Video montado: {output_path}")
     return output_path
 
@@ -205,9 +275,11 @@ async def enviar_telegram_video(video_path, caption):
 
 
 async def pipeline():
-    tema = random.choice(TEMAS)
+    tema = await escolher_tema()
     log.info(f"Tema escolhido: {tema['titulo']}")
-    await enviar_telegram_texto(f"Gerando video TikTok...\nTema: {tema['titulo']}")
+    await enviar_telegram_texto(
+        f"Gerando video TikTok...\nTema: {tema['titulo']}"
+    )
     try:
         roteiro = await gerar_roteiro(tema)
         audio = await gerar_audio(roteiro)
@@ -225,17 +297,23 @@ async def main():
     if not checar_variaveis():
         log.error("VARIAVEL AUSENTE - abortando.")
         return
+
     if MODO_TESTE:
         log.info("MODO TESTE - rodando pipeline agora!")
         await pipeline()
         return
+
     log.info(f"Aguardando horarios de envio: {HORAS_ENVIO} BRT")
     horas_disparadas = set()
     while True:
         agora = datetime.now(timezone.utc)
         hora_brt = (agora.hour - 3) % 24
         chave = f"{agora.date()}-{hora_brt}"
-        if hora_brt in HORAS_ENVIO and agora.minute == 0 and chave not in horas_disparadas:
+        if (
+            hora_brt in HORAS_ENVIO
+            and agora.minute == 0
+            and chave not in horas_disparadas
+        ):
             horas_disparadas.add(chave)
             await pipeline()
             if len(horas_disparadas) > 10:
