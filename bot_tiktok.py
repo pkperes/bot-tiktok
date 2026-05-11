@@ -26,7 +26,7 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 PEXELS_KEY = os.environ.get("PEXELS_KEY", "").strip()
 
 HORAS_ENVIO = [10, 21]
-MODO_TESTE = True
+MODO_TESTE = True  # coloque True para testar rodando o pipeline imediatamente
 
 TMP = Path(tempfile.gettempdir())
 
@@ -85,7 +85,6 @@ async def gerar_tema_curioso_sombrio():
     # tenta remover cercas de codigo ``` se vierem
     if conteudo.startswith("```"):
         linhas = conteudo.splitlines()
-        # remove primeira linha ```... e ultima se for ```
         if linhas and linhas[0].startswith("```"):
             linhas = linhas[1:]
         if linhas and linhas[-1].strip().startswith("```"):
@@ -220,6 +219,11 @@ def montar_video(video_path, audio_path, titulo):
         str(video_path),
         "-i",
         str(audio_path),
+        # força: video do primeiro input, audio do segundo (narracao)
+        "-map",
+        "0:v:0",
+        "-map",
+        "1:a:0",
         "-shortest",
         "-c:v",
         "libx264",
