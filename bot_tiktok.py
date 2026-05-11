@@ -64,12 +64,11 @@ def limpar_texto_overlay(texto, max_len=60):
     """Pega primeira linha/frase, limita tamanho e remove chars que quebram o drawtext."""
     if not texto:
         return ""
-    t = texto.replace("
-", " ").strip()
+    t = texto.replace("\n", " ").strip()
     if "." in t:
         t = t.split(".", 1)[0]
     t = t[:max_len]
-    for ch in ["'", ":", "\", "%"]:
+    for ch in ["'", ":", "\\", "%"]:
         t = t.replace(ch, "")
     return t.strip()
 
