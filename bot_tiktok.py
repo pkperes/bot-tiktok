@@ -26,7 +26,7 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 PEXELS_KEY = os.environ.get("PEXELS_KEY", "").strip()
 
 HORAS_ENVIO = [10, 21]
-MODO_TESTE = True  # coloque True para testar rodando o pipeline imediatamente
+MODO_TESTE = False  # coloque True para testar rodando o pipeline imediatamente
 
 TMP = Path(tempfile.gettempdir())
 
@@ -78,7 +78,6 @@ def gerar_nome_video(titulo: str) -> Path:
     if not titulo:
         base = "video_tiktok"
     else:
-        # mantém letras, numeros, espaco, - _ .
         permitido = []
         for ch in titulo:
             if ch.isalnum() or ch in " -_.":
@@ -86,11 +85,9 @@ def gerar_nome_video(titulo: str) -> Path:
             else:
                 permitido.append("_")
         base = "".join(permitido).strip()
-        # troca espaços por _
         base = "_".join(base.split())
         if not base:
             base = "video_tiktok"
-    # limita tamanho para não ficar gigante
     base = base[:60].strip("_")
     return TMP / f"{base}.mp4"
 
@@ -118,10 +115,9 @@ As keywords devem ser em ingles para busca no Pexels (ex: "dark forest mystery n
         r.raise_for_status()
         conteudo = r.json()["choices"][0]["message"]["content"].strip()
 
-    # tenta remover cercas de codigo ``` se vierem
     if conteudo.startswith("```"):
         linhas = conteudo.splitlines()
-        if linhas and linhas[0].startswith("```"):
+        if linhas and linhas.startswith("```"):
             linhas = linhas[1:]
         if linhas and linhas[-1].strip().startswith("```"):
             linhas = linhas[:-1]
@@ -182,7 +178,7 @@ Retorne APENAS o texto da narracao, sem indicacoes de cena.
             },
         )
         r.raise_for_status()
-        texto = r.json()["choices"][0]["message"]["content"].strip()
+        texto = r.json()["choices"]["message"]["content"].strip()
     log.info(f"Roteiro gerado: {len(texto)} chars")
     return texto
 
@@ -267,7 +263,7 @@ def _render_video(video_path, audio_path, titulo, headline, width, height, crf, 
         FFMPEG,
         "-y",
         "-stream_loop",
-        "2",
+        "8",  # mais loops para cobrir toda a narracao
         "-i",
         str(video_path),
         "-i",
@@ -312,7 +308,6 @@ def _render_video(video_path, audio_path, titulo, headline, width, height, crf, 
 
 
 def montar_video(video_path, audio_path, titulo, headline):
-    # 1ª tentativa: 720p (pode falhar por limite de recurso)
     try:
         return _render_video(
             video_path=video_path,
@@ -327,7 +322,6 @@ def montar_video(video_path, audio_path, titulo, headline):
     except Exception as e:
         log.error(f"Falha ao gerar em 720p: {e} -> tentando versao mais leve 540x960")
 
-    # 2ª tentativa (fallback): 540x960, mais leve para nao matar o processo
     return _render_video(
         video_path=video_path,
         audio_path=audio_path,
