@@ -26,7 +26,7 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 PEXELS_KEY = os.environ.get("PEXELS_KEY", "").strip()
 
 HORAS_ENVIO = [10, 21]
-MODO_TESTE = True  # coloque True para testar rodando o pipeline imediatamente
+MODO_TESTE = False  # coloque True para testar rodando o pipeline imediatamente
 
 TMP = Path(tempfile.gettempdir())
 
@@ -64,11 +64,12 @@ def limpar_texto_overlay(texto, max_len=60):
     # pega primeira linha/frase, limita tamanho e remove chars que quebram o drawtext
     if not texto:
         return ""
-    t = texto.replace("\n", " ").strip()
+    t = texto.replace("
+", " ").strip()
     if "." in t:
         t = t.split(".", 1)[0]
     t = t[:max_len]
-    for ch in ["'", ":", "\\", "%"]:
+    for ch in ["'", ":", "\", "%"]:
         t = t.replace(ch, "")
     return t.strip()
 
@@ -77,10 +78,14 @@ async def gerar_tema_curioso_sombrio():
     log.info("Gerando tema curioso/sombrio via OpenAI...")
     prompt = (
         "Gere APENAS 1 ideia de tema curioso e sombrio para um video curto do TikTok "
-        "em portugues do Brasil.\n"
-        "O tema deve ser misterioso ou macabro, mas sem violencia grafica.\n"
-        "Responda EXATAMENTE neste formato JSON, em uma unica linha:\n"
-        '{"titulo": "TITULO EM PORTUGUES", "palavras": "keywords em ingles separadas por espaco"}\n'
+        "em portugues do Brasil.
+"
+        "O tema deve ser misterioso ou macabro, mas sem violencia grafica.
+"
+        "Responda EXATAMENTE neste formato JSON, em uma unica linha:
+"
+        '{"titulo": "TITULO EM PORTUGUES", "palavras": "keywords em ingles separadas por espaco"}
+'
         "As keywords devem ser em ingles para busca no Pexels "
         "(ex: 'dark forest mystery night')."
     )
@@ -105,7 +110,8 @@ async def gerar_tema_curioso_sombrio():
             linhas = linhas[1:]
         if linhas and linhas[-1].strip().startswith("```"):
             linhas = linhas[:-1]
-        conteudo = "\n".join(linhas).strip()
+        conteudo = "
+".join(linhas).strip()
 
     try:
         tema = json.loads(conteudo)
@@ -142,13 +148,20 @@ async def escolher_tema():
 async def gerar_roteiro(tema):
     log.info("Gerando roteiro...")
     prompt = (
-        "Crie um roteiro narrado em portugues brasileiro para um video curto do TikTok (60-90 segundos).\n"
-        f"Tema: {tema['titulo']}\n"
-        "O roteiro deve:\n"
-        "- Comecar com uma frase de impacto nos primeiros 3 segundos\n"
-        "- Ser narrado em primeira pessoa ou como narrador\n"
-        "- Ter linguagem simples e envolvente\n"
-        "- Terminar com call to action (Segue para mais historias assim)\n"
+        "Crie um roteiro narrado em portugues brasileiro para um video curto do TikTok (60-90 segundos).
+"
+        f"Tema: {tema['titulo']}
+"
+        "O roteiro deve:
+"
+        "- Comecar com uma frase de impacto nos primeiros 3 segundos
+"
+        "- Ser narrado em primeira pessoa ou como narrador
+"
+        "- Ter linguagem simples e envolvente
+"
+        "- Terminar com call to action (Segue para mais historias assim)
+"
         "Retorne APENAS o texto da narracao, sem indicacoes de cena."
     )
 
@@ -221,14 +234,12 @@ async def baixar_video_fundo(palavras):
     return video_path
 
 
-def montar_video(video_path, audio_path, titulo, headline):
-    log.info("Montando video final com ffmpeg direto (720p 9:16)...")
+def _render_video(video_path, audio_path, titulo, headline, width, height, crf, preset):
+    log.info(f"Renderizando video com resolucao {width}x{height}, crf={crf}, preset={preset}...")
     output_path = TMP / "video_final.mp4"
 
-    # base: upscaling + crop para 9:16 em 720x1280 (HD vertical)
-    vf = "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280"
+    vf = f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}"
 
-    # tenta adicionar texto se tiver fonte e texto limpo
     texto_overlay = limpar_texto_overlay(headline or titulo, max_len=60)
     if texto_overlay and os.path.exists(FONT_PATH):
         log.info(f"Aplicando overlay de texto: {texto_overlay}")
@@ -249,31 +260,28 @@ def montar_video(video_path, audio_path, titulo, headline):
         FFMPEG,
         "-y",
         "-stream_loop",
-        "4",
+        "2",
         "-i",
         str(video_path),
         "-i",
         str(audio_path),
-        # garante video + audio corretos
         "-map",
         "0:v:0",
         "-map",
         "1:a:0",
         "-shortest",
-        # video: H.264 em 720x1280, qualidade melhor (CRF menor, preset menos agressivo)
         "-c:v",
         "libx264",
         "-preset",
-        "veryfast",   # melhor qualidade que ultrafast
+        preset,
         "-crf",
-        "20",         # ~4–6 Mbps em 720p na prática
+        str(crf),
         "-vf",
         vf,
         "-r",
-        "30",         # 30 fps é padrão bom para TikTok
+        "30",
         "-pix_fmt",
-        "yuv420p",    # formato esperado pela maioria das plataformas
-        # audio: AAC em bitrate um pouco maior
+        "yuv420p",
         "-c:a",
         "aac",
         "-b:a",
@@ -294,6 +302,35 @@ def montar_video(video_path, audio_path, titulo, headline):
 
     log.info(f"Video montado: {output_path}")
     return output_path
+
+
+def montar_video(video_path, audio_path, titulo, headline):
+    # 1ª tentativa: 720p (pode falhar por limite de recurso)
+    try:
+        return _render_video(
+            video_path=video_path,
+            audio_path=audio_path,
+            titulo=titulo,
+            headline=headline,
+            width=720,
+            height=1280,
+            crf=22,
+            preset="veryfast",
+        )
+    except Exception as e:
+        log.error(f"Falha ao gerar em 720p: {e} -> tentando versao mais leve 540x960")
+
+    # 2ª tentativa (fallback): 540x960, mais leve para nao matar o processo
+    return _render_video(
+        video_path=video_path,
+        audio_path=audio_path,
+        titulo=titulo,
+        headline=headline,
+        width=540,
+        height=960,
+        crf=24,
+        preset="ultrafast",
+    )
 
 
 async def enviar_telegram_texto(msg):
@@ -321,16 +358,18 @@ async def pipeline():
     tema = await escolher_tema()
     log.info(f"Tema escolhido: {tema['titulo']}")
     await enviar_telegram_texto(
-        f"Gerando video TikTok...\nTema: {tema['titulo']}"
+        f"Gerando video TikTok...
+Tema: {tema['titulo']}"
     )
     try:
         roteiro = await gerar_roteiro(tema)
         audio = await gerar_audio(roteiro)
         video_bg = await baixar_video_fundo(tema["palavras"])
-        # usa primeira frase do roteiro como headline para overlay
         headline = limpar_texto_overlay(roteiro, max_len=60)
         video_out = montar_video(video_bg, audio, tema["titulo"], headline)
-        caption = f"{tema['titulo']}\n\nPoste no TikTok agora!"
+        caption = f"{tema['titulo']}
+
+Poste no TikTok agora!"
         await enviar_telegram_video(video_out, caption)
     except Exception as e:
         log.error(f"Erro no pipeline: {e}")
