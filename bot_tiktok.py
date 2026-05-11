@@ -26,7 +26,7 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 PEXELS_KEY = os.environ.get("PEXELS_KEY", "").strip()
 
 HORAS_ENVIO = [10, 21]
-MODO_TESTE = True  # coloque True para testar rodando o pipeline imediatamente
+MODO_TESTE = False  # coloque True para testar rodando o pipeline imediatamente
 
 TMP = Path(tempfile.gettempdir())
 
@@ -71,6 +71,28 @@ def limpar_texto_overlay(texto, max_len=60):
     for ch in ["'", ":", "\\", "%"]:
         t = t.replace(ch, "")
     return t.strip()
+
+
+def gerar_nome_video(titulo: str) -> Path:
+    """Gera um nome de arquivo seguro a partir do titulo."""
+    if not titulo:
+        base = "video_tiktok"
+    else:
+        # mantém letras, numeros, espaco, - _ .
+        permitido = []
+        for ch in titulo:
+            if ch.isalnum() or ch in " -_.":
+                permitido.append(ch)
+            else:
+                permitido.append("_")
+        base = "".join(permitido).strip()
+        # troca espaços por _
+        base = "_".join(base.split())
+        if not base:
+            base = "video_tiktok"
+    # limita tamanho para não ficar gigante
+    base = base[:60].strip("_")
+    return TMP / f"{base}.mp4"
 
 
 async def gerar_tema_curioso_sombrio():
@@ -220,7 +242,8 @@ async def baixar_video_fundo(palavras):
 
 def _render_video(video_path, audio_path, titulo, headline, width, height, crf, preset):
     log.info(f"Renderizando video com resolucao {width}x{height}, crf={crf}, preset={preset}...")
-    output_path = TMP / "video_final.mp4"
+
+    output_path = gerar_nome_video(titulo)
 
     vf = f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}"
 
@@ -332,7 +355,7 @@ async def enviar_telegram_video(video_path, caption):
             r = await c.post(
                 f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVideo",
                 data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption},
-                files={"video": ("video.mp4", f, "video/mp4")},
+                files={"video": (video_path.name, f, "video/mp4")},
             )
             r.raise_for_status()
     log.info("Video enviado com sucesso!")
