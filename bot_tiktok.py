@@ -30,6 +30,9 @@ MODO_TESTE = True  # coloque True para testar rodando o pipeline imediatamente
 
 TMP = Path(tempfile.gettempdir())
 
+# caminho de fonte para o drawtext (ajuste se necessario no seu container)
+FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
 # controle de repeticao de tema por execucao do bot
 MAX_REPETICOES_TEMA = 2
 historico_temas = {}
@@ -55,6 +58,19 @@ def checar_variaveis():
             log.error(f" AUSENTE: {nome}")
             ok = False
     return ok
+
+
+def limpar_texto_overlay(texto, max_len=60):
+    # pega primeira linha/frase, limita tamanho e remove chars que quebram o drawtext
+    if not texto:
+        return ""
+    t = texto.replace("\n", " ").strip()
+    if "." in t:
+        t = t.split(".", 1)[0]
+    t = t[:max_len]
+    for ch in ["'", ":", "\\", "%"]:
+        t = t.replace(ch, "")
+    return t.strip()
 
 
 async def gerar_tema_curioso_sombrio():
@@ -205,14 +221,22 @@ async def baixar_video_fundo(palavras):
     return video_path
 
 
-def montar_video(video_path, audio_path, titulo):
+def montar_video(video_path, audio_path, titulo, headline):
     log.info("Montando video final com ffmpeg direto...")
     output_path = TMP / "video_final.mp4"
+
+    texto_overlay = limpar_texto_overlay(headline or titulo, max_len=60)
+    # filtro de video: crop para 9:16 + texto no topo
+    vf = (
+        f"scale=540:960:force_original_aspect_ratio=increase,crop=540:960,"
+        f"drawtext=fontfile='{FONT_PATH}':text='{texto_overlay}':"
+        "fontcolor=white:fontsize=36:x=(w-text_w)/2:y=80:"
+        "box=1:boxcolor=0x000000aa:boxborderw=12"
+    )
 
     cmd = [
         FFMPEG,
         "-y",
-        # loopa o video de fundo algumas vezes, nao infinito
         "-stream_loop",
         "4",
         "-i",
@@ -232,7 +256,7 @@ def montar_video(video_path, audio_path, titulo):
         "-preset",
         "ultrafast",
         "-vf",
-        "scale=540:960:force_original_aspect_ratio=increase,crop=540:960",
+        vf,
         "-r",
         "24",
         "-c:a",
@@ -288,7 +312,9 @@ async def pipeline():
         roteiro = await gerar_roteiro(tema)
         audio = await gerar_audio(roteiro)
         video_bg = await baixar_video_fundo(tema["palavras"])
-        video_out = montar_video(video_bg, audio, tema["titulo"])
+        # usa primeira frase do roteiro como headline para overlay
+        headline = limpar_texto_overlay(roteiro, max_len=60)
+        video_out = montar_video(video_bg, audio, tema["titulo"], headline)
         caption = f"{tema['titulo']}\n\nPoste no TikTok agora!"
         await enviar_telegram_video(video_out, caption)
     except Exception as e:
