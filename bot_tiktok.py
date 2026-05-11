@@ -225,14 +225,25 @@ def montar_video(video_path, audio_path, titulo, headline):
     log.info("Montando video final com ffmpeg direto...")
     output_path = TMP / "video_final.mp4"
 
+    # base: crop 9:16
+    vf = "scale=540:960:force_original_aspect_ratio=increase,crop=540:960"
+
+    # tenta adicionar texto se tiver fonte e texto limpo
     texto_overlay = limpar_texto_overlay(headline or titulo, max_len=60)
-    # filtro de video: crop para 9:16 + texto no topo
-    vf = (
-        f"scale=540:960:force_original_aspect_ratio=increase,crop=540:960,"
-        f"drawtext=fontfile='{FONT_PATH}':text='{texto_overlay}':"
-        "fontcolor=white:fontsize=36:x=(w-text_w)/2:y=80:"
-        "box=1:boxcolor=0x000000aa:boxborderw=12"
-    )
+    if texto_overlay and os.path.exists(FONT_PATH):
+        log.info(f"Aplicando overlay de texto: {texto_overlay}")
+        vf += (
+            f",drawtext=fontfile='{FONT_PATH}':"
+            f"text='{texto_overlay}':"
+            "fontcolor=white:fontsize=36:"
+            "x=(w-text_w)/2:y=80:"
+            "box=1:boxcolor=0x000000aa:boxborderw=12"
+        )
+    else:
+        log.warning(
+            "Sem overlay de texto (fonte inexistente ou texto vazio). "
+            "Verifique FONT_PATH se quiser o texto no video."
+        )
 
     cmd = [
         FFMPEG,
@@ -243,7 +254,6 @@ def montar_video(video_path, audio_path, titulo, headline):
         str(video_path),
         "-i",
         str(audio_path),
-        # força: video do primeiro input, audio do segundo (narracao)
         "-map",
         "0:v:0",
         "-map",
