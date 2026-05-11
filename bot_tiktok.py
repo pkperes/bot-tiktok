@@ -73,20 +73,15 @@ def limpar_texto_overlay(texto, max_len=60):
     return t.strip()
 
 
-
 async def gerar_tema_curioso_sombrio():
     log.info("Gerando tema curioso/sombrio via OpenAI...")
-    prompt = (
-        "Gere APENAS 1 ideia de tema curioso e sombrio para um video curto do TikTok em portugues do Brasil.
-"
-        "O tema deve ser misterioso ou macabro, mas sem violencia grafica.
-"
-        'Responda EXATAMENTE neste formato JSON, em uma unica linha:
-'
-        '{"titulo": "TITULO EM PORTUGUES", "palavras": "keywords em ingles separadas por espaco"}
-'
-        "As keywords devem ser em ingles para busca no Pexels (ex: dark forest mystery night)."
-    )
+    prompt = """
+Gere APENAS 1 ideia de tema curioso e sombrio para um video curto do TikTok em portugues do Brasil.
+O tema deve ser misterioso ou macabro, mas sem violencia grafica.
+Responda EXATAMENTE neste formato JSON, em uma unica linha:
+{"titulo": "TITULO EM PORTUGUES", "palavras": "keywords em ingles separadas por espaco"}
+As keywords devem ser em ingles para busca no Pexels (ex: "dark forest mystery night").
+""".strip()
 
     async with httpx.AsyncClient(timeout=30) as c:
         r = await c.post(
@@ -108,8 +103,7 @@ async def gerar_tema_curioso_sombrio():
             linhas = linhas[1:]
         if linhas and linhas[-1].strip().startswith("```"):
             linhas = linhas[:-1]
-        conteudo = "
-".join(linhas).strip()
+        conteudo = "\n".join(linhas).strip()
 
     try:
         tema = json.loads(conteudo)
@@ -138,30 +132,22 @@ async def escolher_tema():
             log.info(f"Tema escolhido (repeticao {historico_temas[titulo]}): {titulo}")
             return tema
 
-    # se nao achou nenhum abaixo do limite, usa o ultimo gerado mesmo
     log.info("Usando tema mesmo acima do limite de repeticoes.")
     return ultimo_tema or FALLBACK_TEMA.copy()
 
 
 async def gerar_roteiro(tema):
     log.info("Gerando roteiro...")
-    prompt = (
-        "Crie um roteiro narrado em portugues brasileiro para um video curto do TikTok (60-90 segundos).
-"
-        f"Tema: {tema['titulo']}
-"
-        "O roteiro deve:
-"
-        "- Comecar com uma frase de impacto nos primeiros 3 segundos
-"
-        "- Ser narrado em primeira pessoa ou como narrador
-"
-        "- Ter linguagem simples e envolvente
-"
-        "- Terminar com call to action (Segue para mais historias assim)
-"
-        "Retorne APENAS o texto da narracao, sem indicacoes de cena."
-    )
+    prompt = f"""
+Crie um roteiro narrado em portugues brasileiro para um video curto do TikTok (60-90 segundos).
+Tema: {tema['titulo']}
+O roteiro deve:
+- Comecar com uma frase de impacto nos primeiros 3 segundos
+- Ser narrado em primeira pessoa ou como narrador
+- Ter linguagem simples e envolvente
+- Terminar com call to action (Segue para mais historias assim)
+Retorne APENAS o texto da narracao, sem indicacoes de cena.
+""".strip()
 
     async with httpx.AsyncClient(timeout=30) as c:
         r = await c.post(
@@ -356,8 +342,7 @@ async def pipeline():
     tema = await escolher_tema()
     log.info(f"Tema escolhido: {tema['titulo']}")
     await enviar_telegram_texto(
-        f"Gerando video TikTok...
-Tema: {tema['titulo']}"
+        f"Gerando video TikTok...\nTema: {tema['titulo']}"
     )
     try:
         roteiro = await gerar_roteiro(tema)
@@ -365,9 +350,7 @@ Tema: {tema['titulo']}"
         video_bg = await baixar_video_fundo(tema["palavras"])
         headline = limpar_texto_overlay(roteiro, max_len=60)
         video_out = montar_video(video_bg, audio, tema["titulo"], headline)
-        caption = f"{tema['titulo']}
-
-Poste no TikTok agora!"
+        caption = f"{tema['titulo']}\n\nPoste no TikTok agora!"
         await enviar_telegram_video(video_out, caption)
     except Exception as e:
         log.error(f"Erro no pipeline: {e}")
