@@ -26,7 +26,7 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 PEXELS_KEY = os.environ.get("PEXELS_KEY", "").strip()
 
 HORAS_ENVIO = [10, 21]
-MODO_TESTE = False  # coloque True para testar rodando o pipeline imediatamente
+MODO_TESTE = True  # coloque True para testar rodando o pipeline imediatamente
 
 TMP = Path(tempfile.gettempdir())
 
