@@ -121,6 +121,33 @@ def normalizar_tema(bruto):
     return {"titulo": titulo, "palavras": palavras}
 
 
+def extrair_conteudo_chat(resp_json):
+    """
+    Extrai o campo content da resposta da API de chat de forma segura.
+    Nunca faz lista['chave'].
+    """
+    data = resp_json
+    if isinstance(data, list):
+        if not data:
+            return ""
+        data = data[0]
+
+    if not isinstance(data, dict):
+        return str(data)
+
+    choices = data.get("choices")
+    if isinstance(choices, list) and choices:
+        item = choices[0]
+        if isinstance(item, dict):
+            msg = item.get("message") or {}
+            if isinstance(msg, dict):
+                conteudo = msg.get("content")
+                if isinstance(conteudo, str):
+                    return conteudo
+                return str(conteudo or "")
+    return ""
+
+
 async def gerar_tema_curioso_sombrio():
     log.info("Gerando tema curioso/sombrio via OpenAI...")
     prompt = """
@@ -142,7 +169,8 @@ As keywords devem ser em ingles para busca no Pexels (ex: "dark forest mystery n
             },
         )
         r.raise_for_status()
-        conteudo = r.json()["choices"][0]["message"]["content"].strip()
+        data = r.json()
+        conteudo = extrair_conteudo_chat(data).strip()
 
     if conteudo.startswith("```"):
         linhas = conteudo.splitlines()
@@ -197,18 +225,23 @@ O roteiro deve:
 Retorne APENAS o texto da narracao, sem indicacoes de cena.
 """.strip()
 
-    async with httpx.AsyncClient(timeout=30) as c:
+    async with httpx.AsyncClient(timeout=60) as c:
         r = await c.post(
             "https://api.openai.com/v1/chat/completions",
             headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
             json={
                 "model": "gpt-4o-mini",
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": 600,
+                "max_tokens": 700,
             },
         )
         r.raise_for_status()
-        texto = r.json()["choices"]["message"]["content"].strip()
+        data = r.json()
+        texto = extrair_conteudo_chat(data).strip()
+
+    if not texto:
+        raise RuntimeError("Resposta vazia ao gerar roteiro")
+
     log.info(f"Roteiro gerado: {len(texto)} chars")
     return texto
 
@@ -243,18 +276,26 @@ async def baixar_video_fundo(palavras):
             params={"query": palavras, "per_page": 15, "orientation": "portrait"},
         )
         r.raise_for_status()
-        videos = r.json().get("videos", [])
+        data = r.json()
+        if isinstance(data, list):
+            # pexels sempre deveria devolver dict; se vier lista, pega o primeiro dict
+            data = data if data else {}
+        videos = data.get("videos", [])
     if not videos:
         raise Exception("Nenhum video encontrado no Pexels")
 
     video = random.choice(videos)
     url_video = None
-    for f in video["video_files"]:
+    for f in video.get("video_files", []):
         if f.get("quality") == "sd" and f.get("width", 9999) <= 640:
-            url_video = f["link"]
+            url_video = f.get("link")
             break
     if not url_video:
-        url_video = video["video_files"][-1]["link"]
+        arquivos = video.get("video_files") or []
+        if arquivos:
+            url_video = arquivos[-1].get("link")
+    if not url_video:
+        raise Exception("Nao foi possivel determinar URL do video do Pexels")
 
     log.info(f"Baixando video SD: {url_video[:60]}...")
     async with httpx.AsyncClient(timeout=120) as c:
@@ -293,7 +334,7 @@ def _render_video(video_path, audio_path, titulo, headline, width, height, crf, 
         FFMPEG,
         "-y",
         "-stream_loop",
-        "8",  # loops suficientes para cobrir a narracao
+        "8",
         "-i",
         str(video_path),
         "-i",
@@ -331,7 +372,7 @@ def _render_video(video_path, audio_path, titulo, headline, width, height, crf, 
     if result.returncode != 0:
         log.error(f"FFMPEG stdout: {result.stdout[-800:]}")
         log.error(f"FFMPEG stderr: {result.stderr[-800:]}")
-        raise Exception(f"FFMPEG falhou com codigo {resultreturncode}")
+        raise Exception(f"FFMPEG falhou com codigo {result.returncode}")
 
     log.info(f"Video montado: {output_path}")
     return output_path
