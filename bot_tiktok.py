@@ -26,7 +26,6 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 PEXELS_KEY = os.environ.get("PEXELS_KEY", "").strip()
 
 HORAS_ENVIO = [10, 21]
-MODO_TESTE = True  # coloque True para testar rodando o pipeline imediatamente
 
 TMP = Path(tempfile.gettempdir())
 
@@ -280,7 +279,6 @@ async def baixar_video_fundo(palavras):
                 "query": palavras,
                 "per_page": 15,
                 "orientation": "portrait",
-                # nao ha filtro direto de duracao na API HTTP, entao filtramos no codigo
             },
         )
         r.raise_for_status()
@@ -350,7 +348,7 @@ def _render_video(video_path, audio_path, titulo, headline, width, height, crf, 
         FFMPEG,
         "-y",
         "-stream_loop",
-        "8",  # loops suficientes para cobrir a narracao (8 * >=12s ~= 96s)
+        "8",
         "-i",
         str(video_path),
         "-i",
@@ -388,7 +386,7 @@ def _render_video(video_path, audio_path, titulo, headline, width, height, crf, 
     if result.returncode != 0:
         log.error(f"FFMPEG stdout: {result.stdout[-800:]}")
         log.error(f"FFMPEG stderr: {result.stderr[-800:]}")
-        raise Exception(f"FFMPEG falhou com codigo {result.returncode}")
+        raise Exception(f"FFMPEG falhou com codigo {resultreturncode}")
 
     log.info(f"Video montado: {output_path}")
     return output_path
@@ -467,11 +465,18 @@ async def main():
         log.error("VARIAVEL AUSENTE - abortando.")
         return
 
-    if MODO_TESTE:
-        log.info("MODO TESTE - rodando pipeline agora!")
+    # Execução inicial imediata (teste)
+    log.info("Execucao inicial do pipeline ao iniciar o container...")
+    try:
         await pipeline()
-        return
+    except Exception as e:
+        log.error(f"Erro na execucao inicial: {e}")
+        try:
+            await enviar_telegram_texto(f"Erro na execucao inicial: {e}")
+        except Exception:
+            pass
 
+    # Loop normal nos horarios previstos
     log.info(f"Aguardando horarios de envio: {HORAS_ENVIO} BRT")
     horas_disparadas = set()
     while True:
