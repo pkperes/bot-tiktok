@@ -26,7 +26,7 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 PEXELS_KEY = os.environ.get("PEXELS_KEY", "").strip()
 
 HORAS_ENVIO = [10, 21]
-MODO_TESTE = False  # coloque True para testar rodando o pipeline imediatamente
+MODO_TESTE = True  # coloque True para testar rodando o pipeline imediatamente
 
 TMP = Path(tempfile.gettempdir())
 
@@ -39,8 +39,8 @@ historico_temas = {}
 
 # fallback simples caso a geracao de tema falhe
 FALLBACK_TEMA = {
-    "titulo": "Uma historia curiosa e sombria que quase ninguem conhece",
-    "palavras": "dark mystery story night",
+    "titulo": "Uma historia verdadeira assustadora que quase ninguem conhece no Brasil",
+    "palavras": "brazil night horror urban legend",
 }
 
 
@@ -149,13 +149,14 @@ def extrair_conteudo_chat(resp_json):
 
 
 async def gerar_tema_curioso_sombrio():
-    log.info("Gerando tema curioso/sombrio via OpenAI...")
+    log.info("Gerando tema assustador brasileiro via OpenAI...")
     prompt = """
-Gere APENAS 1 ideia de tema curioso e sombrio para um video curto do TikTok em portugues do Brasil.
-O tema deve ser misterioso ou macabro, mas sem violencia grafica.
+Gere APENAS 1 tema de historia verdadeira assustadora que aconteceu no Brasil, em portugues do Brasil.
+O tema pode envolver crimes reais, casos misteriosos, lendas urbanas brasileiras ou folclore (como Saci, Curupira, Iara, Mula sem Cabeça etc),
+mas sempre tratado como historia de terror ou suspense, sem violencia grafica explicita.
 Responda EXATAMENTE neste formato JSON, em uma unica linha:
 {"titulo": "TITULO EM PORTUGUES", "palavras": "keywords em ingles separadas por espaco"}
-As keywords devem ser em ingles para busca no Pexels (ex: "dark forest mystery night").
+As keywords devem ser em ingles para busca de video no Pexels, pensando em cenas sombrias (ex: "brazil night forest favela horror legend").
 """.strip()
 
     async with httpx.AsyncClient(timeout=30) as c:
@@ -217,10 +218,12 @@ async def gerar_roteiro(tema):
     prompt = f"""
 Crie um roteiro narrado em portugues brasileiro para um video curto do TikTok (60-90 segundos).
 Tema: {tema['titulo']}
+A historia deve ser apresentada como algo que realmente aconteceu no Brasil (caso real ou lenda muito conhecida),
+com clima de suspense/terror, mas sem detalhes de violencia grafica.
 O roteiro deve:
 - Comecar com uma frase de impacto nos primeiros 3 segundos
 - Ser narrado em primeira pessoa ou como narrador
-- Ter linguagem simples e envolvente
+- Ter linguagem simples, envolvente e sombria
 - Terminar com call to action (Segue para mais historias assim)
 Retorne APENAS o texto da narracao, sem indicacoes de cena.
 """.strip()
@@ -273,18 +276,31 @@ async def baixar_video_fundo(palavras):
         r = await c.get(
             "https://api.pexels.com/videos/search",
             headers={"Authorization": PEXELS_KEY},
-            params={"query": palavras, "per_page": 15, "orientation": "portrait"},
+            params={
+                "query": palavras,
+                "per_page": 15,
+                "orientation": "portrait",
+                # nao ha filtro direto de duracao na API HTTP, entao filtramos no codigo
+            },
         )
         r.raise_for_status()
         data = r.json()
         if isinstance(data, list):
-            # pexels sempre deveria devolver dict; se vier lista, pega o primeiro dict
             data = data if data else {}
         videos = data.get("videos", [])
     if not videos:
         raise Exception("Nenhum video encontrado no Pexels")
 
-    video = random.choice(videos)
+    # filtra por duracao minima de 12 segundos (campo duration em segundos)
+    candidatos = [v for v in videos if v.get("duration", 0) >= 12]
+    if not candidatos:
+        log.warning("Nenhum video >= 12s, usando qualquer duracao retornada.")
+        candidatos = videos
+
+    video = random.choice(candidatos)
+    dur = video.get("duration")
+    log.info(f"Video escolhido com duracao {dur}s (min 12s)")
+
     url_video = None
     for f in video.get("video_files", []):
         if f.get("quality") == "sd" and f.get("width", 9999) <= 640:
@@ -334,7 +350,7 @@ def _render_video(video_path, audio_path, titulo, headline, width, height, crf, 
         FFMPEG,
         "-y",
         "-stream_loop",
-        "8",
+        "8",  # loops suficientes para cobrir a narracao (8 * >=12s ~= 96s)
         "-i",
         str(video_path),
         "-i",
