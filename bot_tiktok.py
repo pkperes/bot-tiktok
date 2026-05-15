@@ -38,8 +38,8 @@ historico_temas = {}
 
 # fallback simples caso a geracao de tema falhe
 FALLBACK_TEMA = {
-    "titulo": "Uma historia verdadeira assustadora que quase ninguem conhece no Brasil",
-    "palavras": "brazil night horror urban legend",
+    "titulo": "Uma historia real que quase ninguem te contou",
+    "palavras": "mystery creepy brazil world urban legend ghost town",
 }
 
 
@@ -148,14 +148,22 @@ def extrair_conteudo_chat(resp_json):
 
 
 async def gerar_tema_curioso_sombrio():
-    log.info("Gerando tema assustador brasileiro via OpenAI...")
+    log.info("Gerando tema de 'historia real que ninguem te contou' via OpenAI...")
     prompt = """
-Gere APENAS 1 tema de historia verdadeira assustadora que aconteceu no Brasil, em portugues do Brasil.
-O tema pode envolver crimes reais, casos misteriosos, lendas urbanas brasileiras ou folclore (como Saci, Curupira, Iara, Mula sem Cabeça etc),
-mas sempre tratado como historia de terror ou suspense, sem violencia grafica explicita.
+Gere APENAS 1 tema de historia real curiosa, misteriosa ou assustadora que quase ninguem conhece.
+A historia deve ser contada em portugues do Brasil, mas pode ter acontecido no Brasil ou em qualquer lugar do mundo.
+O tema pode envolver, por exemplo:
+- trens ou avioes que desapareceram misteriosamente
+- cidades fantasmas que ainda aparecem em mapas
+- vilarejos com costumes bizarros ou inexplicaveis
+- bonecos ou objetos que ganharam vida segundo relatos
+- paises com leis e tradicoes estranhas
+- casos criminais ou coincidencias reais que parecem impossiveis
+Nao use personagens classicos de folclore (Saci, Curupira, Iara, Mula sem Cabeca etc.) como foco principal do tema.
 Responda EXATAMENTE neste formato JSON, em uma unica linha:
 {"titulo": "TITULO EM PORTUGUES", "palavras": "keywords em ingles separadas por espaco"}
-As keywords devem ser em ingles para busca de video no Pexels, pensando em cenas sombrias (ex: "brazil night forest favela horror legend").
+As keywords devem ser em ingles para busca de video no Pexels, pensando em cenas sombrias e misteriosas
+(ex: "dark road night city train station ghost town creepy village").
 """.strip()
 
     async with httpx.AsyncClient(timeout=30) as c:
@@ -217,12 +225,13 @@ async def gerar_roteiro(tema):
     prompt = f"""
 Crie um roteiro narrado em portugues brasileiro para um video curto do TikTok (60-90 segundos).
 Tema: {tema['titulo']}
-A historia deve ser apresentada como algo que realmente aconteceu no Brasil (caso real ou lenda muito conhecida),
-com clima de suspense/terror, mas sem detalhes de violencia grafica.
+A historia deve ser apresentada como algo real ou contado como verdadeiro (uma historia que quase ninguem conhece),
+com clima de misterio/suspense, mas sem detalhes de violencia grafica.
 O roteiro deve:
 - Comecar com uma frase de impacto nos primeiros 3 segundos
 - Ser narrado em primeira pessoa ou como narrador
 - Ter linguagem simples, envolvente e sombria
+- Trazer alguns detalhes especificos (epoca aproximada, lugar, contexto), sem precisar citar datas exatas
 - Terminar com call to action (Segue para mais historias assim)
 Retorne APENAS o texto da narracao, sem indicacoes de cena.
 """.strip()
@@ -386,7 +395,7 @@ def _render_video(video_path, audio_path, titulo, headline, width, height, crf, 
     if result.returncode != 0:
         log.error(f"FFMPEG stdout: {result.stdout[-800:]}")
         log.error(f"FFMPEG stderr: {result.stderr[-800:]}")
-        raise Exception(f"FFMPEG falhou com codigo {resultreturncode}")
+        raise Exception(f"FFMPEG falhou com codigo {result.returncode}")
 
     log.info(f"Video montado: {output_path}")
     return output_path
